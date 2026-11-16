@@ -23,11 +23,11 @@ client = genai.Client(
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown"
+        "chat_id": str(TELEGRAM_CHAT_ID).strip(),
+        "text": message
     }
-    requests.post(url, json=payload)
+    resp = requests.post(url, json=payload)
+    print("Telegram status:", resp.status_code, resp.text)
 
 def calculate_rsi(series, period=14):
     delta = series.diff()
