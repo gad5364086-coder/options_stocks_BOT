@@ -7,14 +7,12 @@ from datetime import datetime
 from google import genai
 from google.genai import types
 
-# רשימת המניות לסריקה - תוכל להוסיף או להוריד מניות כאן בכל עת
 WATCHLIST = ["NVDA", "META", "TSLA", "TSM", "AAPL", "AMD", "MSFT", "AMZN", "QQQ", "SPY"]
 
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY"].strip()
+TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"].strip()
+TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"].strip()
 
-# שימוש ב-v1beta מאפשר גישה לכל המודלים העדכניים של Gemini
 client = genai.Client(
     api_key=GEMINI_API_KEY,
     http_options=types.HttpOptions(api_version='v1beta')
@@ -23,11 +21,11 @@ client = genai.Client(
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
-        "chat_id": str(TELEGRAM_CHAT_ID).strip(),
+        "chat_id": TELEGRAM_CHAT_ID,
         "text": message
     }
     resp = requests.post(url, json=payload)
-    print("Telegram status:", resp.status_code, resp.text)
+    print("Telegram response:", resp.status_code, resp.text)
 
 def calculate_rsi(series, period=14):
     delta = series.diff()
@@ -64,7 +62,6 @@ def get_candidate_data(ticker_symbol):
                 earnings_date_str = str(ed)
                 days_to_earnings = (ed - today).days
                 if 0 <= days_to_earnings <= 42:
-                    print(f"Skipping {ticker_symbol}: Earnings in {days_to_earnings} days")
                     return None
         except Exception:
             pass
@@ -128,7 +125,7 @@ def analyze_with_gemini(data):
     4. Calculate Net Credit using Bid/Ask mid-prices. Net credit MUST be at least 22% of the spread width, and Open Interest must show decent liquidity.
     5. If the setup does NOT meet high-probability Bull Put Spread criteria, output ONLY the word: SKIP
 
-    If APPROVED, write a crisp, professional alert in Hebrew formatted for Telegram (use *bold* for headers):
+    If APPROVED, write a crisp, professional alert in Hebrew formatted for Telegram:
     - Ticker & Current Price + RSI
     - Expiration Date & DTE
     - Short Put Strike & Long Put Strike
@@ -153,4 +150,18 @@ def main():
     print("Starting Bull Put Spread scan...")
     found_any = False
     for ticker in WATCHLIST:
-        data = get_candidate_
+        print(f"Checking {ticker}...")
+        data = get_candidate_data(ticker)
+        if data:
+            print(f"Analyzing {ticker} with Gemini...")
+            result = analyze_with_gemini(data)
+            if "SKIP" not in result.upper():
+                send_telegram(result)
+                found_any = True
+    
+    if not found_any:
+        print("Scan complete. No setups found.")
+        send_telegram("🔍 הסריקה הושלמה: כרגע אין מניות שעומדות בתנאי הכניסה של Bull Put Spread.")
+
+if __name__ == "__main__":
+    main()
