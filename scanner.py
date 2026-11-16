@@ -5,14 +5,20 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime
 from google import genai
+from google.genai import types
 
+# רשימת המניות לסריקה - תוכל להוסיף או להוריד מניות כאן בכל עת
 WATCHLIST = ["NVDA", "META", "TSLA", "TSM", "AAPL", "AMD", "MSFT", "AMZN", "QQQ", "SPY"]
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+# שימוש ב-v1beta מאפשר גישה לכל המודלים העדכניים של Gemini
+client = genai.Client(
+    api_key=GEMINI_API_KEY,
+    http_options=types.HttpOptions(api_version='v1beta')
+)
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -129,11 +135,20 @@ def analyze_with_gemini(data):
     - Estimated Net Credit & Max Risk per contract
     - Brief 1-sentence technical rationale.
     """
-    response = client.models.generate_content(
-        model="gemini-3.0-flash",
-        contents=prompt,
-    )
-    return response.text.strip()
+    # מנסה אוטומטית את שמות המודלים העדכניים של Flash עד שאחד מצליח
+    candidate_models = ["gemini-3-flash-preview", "gemini-3.0-flash", "gemini-2.5-flash"]
+    last_error = None
+    for model_name in candidate_models:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+            )
+            return response.text.strip()
+        except Exception as e:
+            last_error = e
+            continue
+    raise last_error
 
 def main():
     print("Starting Bull Put Spread scan...")
