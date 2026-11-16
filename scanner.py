@@ -135,7 +135,6 @@ def analyze_with_gemini(data):
     - Estimated Net Credit & Max Risk per contract
     - Brief 1-sentence technical rationale.
     """
-    # מנסה אוטומטית את שמות המודלים העדכניים של Flash עד שאחד מצליח
     candidate_models = ["gemini-3-flash-preview", "gemini-3.0-flash", "gemini-2.5-flash"]
     last_error = None
     for model_name in candidate_models:
@@ -154,16 +153,4 @@ def main():
     print("Starting Bull Put Spread scan...")
     found_any = False
     for ticker in WATCHLIST:
-        data = get_candidate_data(ticker)
-        if data:
-            print(f"Analyzing {ticker} with Gemini...")
-            result = analyze_with_gemini(data)
-            if "SKIP" not in result.upper():
-                send_telegram(result)
-                found_any = True
-if not found_any:
-        print("Scan complete. No high-probability setups found today.")
-        send_telegram("🔍 הסריקה הושלמה: כרגע אין מניות שעומדות בתנאי הכניסה של Bull Put Spread.")
-
-if __name__ == "__main__":
-    main()
+        data = get_candidate_
