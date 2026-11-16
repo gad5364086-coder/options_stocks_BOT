@@ -161,9 +161,9 @@ def main():
             if "SKIP" not in result.upper():
                 send_telegram(result)
                 found_any = True
-    
-    if not found_any:
+if not found_any:
         print("Scan complete. No high-probability setups found today.")
+        send_telegram("🔍 הסריקה הושלמה: כרגע אין מניות שעומדות בתנאי הכניסה של Bull Put Spread.")
 
 if __name__ == "__main__":
     main()
