@@ -2,7 +2,10 @@ name: Bull Put Spread Scanner
 
 on:
   schedule:
-    - cron: '15 15,20 * * 1-5'
+    # כל רבע שעה מ-16:00 עד 22:45 שעון ישראל (14:00 עד 20:45 UTC) בימים שני-שישי
+    - cron: '*/15 14-20 * * 1-5'
+    # ריצה אחרונה ב-23:00 שעון ישראל (21:00 UTC)
+    - cron: '0 21 * * 1-5'
   workflow_dispatch:
 
 jobs:
