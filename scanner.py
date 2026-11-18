@@ -4,6 +4,7 @@ import requests
 import yfinance as yf
 import pandas as pd
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from google import genai
 from google.genai import types
 
@@ -36,11 +37,11 @@ def get_already_sent_today():
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
         resp = requests.get(url, timeout=10).json()
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = datetime.now(ZoneInfo("Asia/Jerusalem")).strftime("%Y-%m-%d")
         for item in resp.get("result", []):
             msg = item.get("message") or item.get("channel_post") or {}
             text = msg.get("text", "")
-            msg_date = datetime.fromtimestamp(msg.get("date", 0)).strftime("%Y-%m-%d")
+            msg_date = datetime.fromtimestamp(msg.get("date", 0), tz=ZoneInfo("Asia/Jerusalem")).strftime("%Y-%m-%d")
             if msg_date == today_str:
                 for t in WATCHLIST:
                     if f"[{t}]" in text:
@@ -106,8 +107,8 @@ def check_daily_spread_strategy(ticker_symbol, vix_level):
         if not strategy_type:
             return None
 
-        # תנאי 6: פסילה אם יש דו"ח כספי ב-5 הימים הקרובים (תעודות סל כמו SPY/QQQ/USO ידלגו בבטחה)
-        today = datetime.now().date()
+        # תנאי 6: פסילה אם יש דו"ח כספי ב-5 הימים הקרובים
+        today = datetime.now(ZoneInfo("Asia/Jerusalem")).date()
         earnings_str = "לא קרוב"
         try:
             cal = stock.calendar
@@ -175,6 +176,7 @@ def check_daily_spread_strategy(ticker_symbol, vix_level):
 
         return {
             "ticker": ticker_symbol,
+            "today_date": today.strftime("%d/%m/%Y"),
             "strategy": strategy_type,
             "price": close_p,
             "sma_150": sma_150,
@@ -206,9 +208,9 @@ def analyze_with_gemini(data):
     If APPROVED, output a crisp alert in Hebrew formatted for Telegram.
     CRITICAL: The very first line MUST include [{data['ticker']}] in square brackets so duplicate alerts are prevented!
     Format:
-    [{data['ticker']}] {data['strategy']} (6/6 תנאים ביומי) | מחיר: ${data['price']}
-    😱 מדד הפחד (VIX): {data['vix_index']}
-    📊 נתוני הלוח: RSI יומי {data['rsi_today']} (אתמול {data['rsi_yesterday']}) | ממוצע 150: ${data['sma_150']} | ווליום פי {data['volume_ratio']}
+    [{data['ticker']}] {data['strategy']} | מחיר: ${data['price']}
+    🗓️ תאריך: {data['today_date']} | 😱 מדד הפחד (VIX): {data['vix_index']}
+    📊 נתוני הלוח (6/6): RSI יומי {data['rsi_today']} (אתמול {data['rsi_yesterday']}) | ממוצע 150: ${data['sma_150']} | ווליום פי {data['volume_ratio']}
     📅 פקיעה: {data['expiration']} ({data['dte']} DTE)
     🎯 מבנה הספרד:
     • מכירה (Short): סטרייק $[ShortStrike]
