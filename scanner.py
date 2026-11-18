@@ -248,6 +248,8 @@ def main():
             result = analyze_with_gemini(data)
             if "SKIP" not in result.upper():
                 send_telegram(result)
+    today_str = datetime.now(ZoneInfo("Asia/Jerusalem")).strftime("%d/%m/%Y %H:%M")
+    send_telegram(f"✅ בדיקת מערכת תקינה!\n🗓️ תאריך ושעה: {today_str}\n😱 מדד הפחד (VIX): {vix_level}")
     print("Scan finished.")
 
 if __name__ == "__main__":
