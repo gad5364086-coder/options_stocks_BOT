@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from google import genai
 from google.genai import types
 
-# חברות ענק (Mega-Cap), מדדים מובילים ונפט (USO) עם נזילות אופציות גבוהה
+# Mega-Cap stocks, major ETFs, and USO with high options liquidity
 WATCHLIST = ["NVDA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "TSLA", "AMD", "NFLX", "SPY", "QQQ", "USO"]
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"].strip()
@@ -21,7 +21,7 @@ client = genai.Client(
 )
 
 def get_vix_level():
-    """שולף את הערך העדכני של מדד הפחד VIX"""
+    """Fetches the latest VIX index closing/current value"""
     try:
         vix = yf.Ticker("^VIX")
         hist = vix.history(period="5d")
@@ -29,10 +29,10 @@ def get_vix_level():
             return round(hist['Close'].iloc[-1], 2)
     except Exception as e:
         print(f"Error fetching VIX: {e}")
-    return "לא זמין"
+    return "N/A"
 
 def get_already_sent_today():
-    """מונע שליחת התראות כפולות על אותה מניה באותו יום"""
+    """Prevents duplicate alerts for the same ticker on the same day"""
     sent = set()
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
@@ -92,163 +92,19 @@ def check_daily_spread_strategy(ticker_symbol, vix_level):
         candle_range = high_p - low_p
         if candle_range == 0:
             return None
-        close_position = (close_p - low_p) / candle_range  # 1.0 = גבוה יומי, 0.0 = נמוך יומי
+        close_position = (close_p - low_p) / candle_range  # 1.0 = daily high, 0.0 = daily low
 
         strategy_type = None
 
-        # 1. בדיקת Bull Put Spread (6/6 תנאים חיוביים מעל ממוצע 150)
+        # 1. Bull Put Spread check (6/6 bullish conditions above SMA 150)
         if (28 <= rsi_curr < 50) and (rsi_curr > rsi_prev) and (close_p > sma_150) and (close_p > open_p) and (vol_ratio >= 1.10) and (close_position >= 0.65):
             strategy_type = "BULL PUT SPREAD"
 
-        # 2. בדיקת Bear Call Spread (6/6 תנאים שליליים מתחת לממוצע 150)
+        # 2. Bear Call Spread check (6/6 bearish conditions below SMA 150)
         elif (50 < rsi_curr <= 72) and (rsi_curr < rsi_prev) and (close_p < sma_150) and (close_p < open_p) and (vol_ratio >= 1.10) and (close_position <= 0.35):
             strategy_type = "BEAR CALL SPREAD"
 
         if not strategy_type:
             return None
 
-        # תנאי 6: פסילה אם יש דו"ח כספי ב-5 הימים הקרובים
-        today = datetime.now(ZoneInfo("Asia/Jerusalem")).date()
-        earnings_str = "לא קרוב"
-        try:
-            cal = stock.calendar
-            if cal is not None and 'Earnings Date' in cal:
-                ed = cal['Earnings Date'][0]
-                if hasattr(ed, 'date'):
-                    ed = ed.date()
-                days_to_ed = (ed - today).days
-                if 0 <= days_to_ed <= 5:
-                    print(f"Skipping {ticker_symbol}: Earnings in {days_to_ed} days")
-                    return None
-                earnings_str = f"{ed} (בעוד {days_to_ed} ימים)"
-        except Exception:
-            pass
-
-        # בחירת פקיעה קצרה (1 עד 4 DTE) לעסקאות של 1-3 ימים
-        expirations = stock.options
-        target_exp = None
-        dte = 0
-        for exp in expirations:
-            exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
-            days = (exp_date - today).days
-            if 1 <= days <= 4:
-                target_exp = exp
-                dte = days
-                break
-
-        if not target_exp:
-            return None
-
-        chain = stock.option_chain(target_exp)
-        options_list = []
-
-        if strategy_type == "BULL PUT SPREAD":
-            puts = chain.puts
-            filtered = puts[(puts['strike'] <= close_p * 0.99) & (puts['strike'] >= close_p * 0.93)]
-            for _, row in filtered.iterrows():
-                if row['ask'] > 0 and row['bid'] > 0:
-                    options_list.append({
-                        "strike": row['strike'],
-                        "bid": row['bid'],
-                        "ask": row['ask'],
-                        "mid": round((row['bid'] + row['ask']) / 2, 2),
-                        "iv": round(row['impliedVolatility'] * 100, 1),
-                        "oi": int(row['openInterest']) if pd.notna(row['openInterest']) else 0
-                    })
-            options_list = options_list[-8:]
-        else:
-            calls = chain.calls
-            filtered = calls[(calls['strike'] >= close_p * 1.01) & (calls['strike'] <= close_p * 1.07)]
-            for _, row in filtered.iterrows():
-                if row['ask'] > 0 and row['bid'] > 0:
-                    options_list.append({
-                        "strike": row['strike'],
-                        "bid": row['bid'],
-                        "ask": row['ask'],
-                        "mid": round((row['bid'] + row['ask']) / 2, 2),
-                        "iv": round(row['impliedVolatility'] * 100, 1),
-                        "oi": int(row['openInterest']) if pd.notna(row['openInterest']) else 0
-                    })
-            options_list = options_list[:8]
-
-        if len(options_list) < 2:
-            return None
-
-        return {
-            "ticker": ticker_symbol,
-            "today_date": today.strftime("%d/%m/%Y"),
-            "strategy": strategy_type,
-            "price": close_p,
-            "sma_150": sma_150,
-            "rsi_today": rsi_curr,
-            "rsi_yesterday": rsi_prev,
-            "volume_ratio": vol_ratio,
-            "vix_index": vix_level,
-            "next_earnings": earnings_str,
-            "expiration": target_exp,
-            "dte": dte,
-            "option_chain_otm": options_list
-        }
-    except Exception as e:
-        print(f"Error processing {ticker_symbol}: {e}")
-        return None
-
-def analyze_with_gemini(data):
-    prompt = f"""
-    You are an expert Options Credit Spread Trader (1-3 day hold) specializing in Bull Put Spreads and Bear Call Spreads.
-    This asset just triggered all 6 Daily Dashboard conditions:
-    {json.dumps(data, indent=2)}
-
-    Rules for building the spread:
-    1. If strategy is BULL PUT SPREAD: Select a Short Put strike roughly 1.5% to 3.5% below current price (preferably near/below SMA150 support), and a Long Put strike $1, $2.5, or $5 lower for protection (adjust width according to asset price, e.g., $1-$2 wide for lower-priced assets like USO, $5 wide for higher-priced stocks).
-    2. If strategy is BEAR CALL SPREAD: Select a Short Call strike roughly 1.5% to 3.5% above current price (preferably near/above SMA150 resistance), and a Long Call strike $1, $2.5, or $5 higher for protection.
-    3. Calculate Net Credit using Mid prices (Short Mid - Long Mid). Net Credit MUST be at least 20% of the spread width, and Open Interest must show good liquidity.
-    4. If no valid liquid spread exists with >= 20% credit/width ratio, output ONLY: SKIP
-
-    If APPROVED, output a crisp alert in Hebrew formatted for Telegram.
-    CRITICAL: The very first line MUST include [{data['ticker']}] in square brackets so duplicate alerts are prevented!
-    Format:
-    [{data['ticker']}] {data['strategy']} | מחיר: ${data['price']}
-    🗓️ תאריך: {data['today_date']} | 😱 מדד הפחד (VIX): {data['vix_index']}
-    📊 נתוני הלוח (6/6): RSI יומי {data['rsi_today']} (אתמול {data['rsi_yesterday']}) | ממוצע 150: ${data['sma_150']} | ווליום פי {data['volume_ratio']}
-    📅 פקיעה: {data['expiration']} ({data['dte']} DTE)
-    🎯 מבנה הספרד:
-    • מכירה (Short): סטרייק $[ShortStrike]
-    • קנייה להגנה (Long): סטרייק $[LongStrike]
-    💰 זיכוי נטו (רווח מקס'): $[NetCredit] ($[NetCredit*100] לחוזה) | סיכון מקס': $[MaxRisk*100]
-    🛡️ ניהול סיכון: סגירת עסקה אם הנכס חוצה את $[StopLevel]
-    """
-    candidate_models = ["gemini-3-flash-preview", "gemini-3.0-flash", "gemini-2.5-flash"]
-    last_error = None
-    for model_name in candidate_models:
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-            )
-            return response.text.strip()
-        except Exception as e:
-            last_error = e
-            continue
-    raise last_error
-
-def main():
-    print("Starting Daily Credit Spread Scanner (Bull Put & Bear Call)...")
-    vix_level = get_vix_level()
-    print(f"Current VIX level: {vix_level}")
-    already_sent = get_already_sent_today()
-    for ticker in WATCHLIST:
-        if ticker in already_sent:
-            print(f"Skipping {ticker}: Already alerted today.")
-            continue
-        print(f"Scanning {ticker}...")
-        data = check_daily_spread_strategy(ticker, vix_level)
-        if data:
-            print(f"6/6 Signal on {ticker} ({data['strategy']}), building spread with Gemini...")
-            result = analyze_with_gemini(data)
-            if "SKIP" not in result.upper():
-                send_telegram(result)
-    print("Scan finished.")
-
-if __name__ == "__main__":
-    main()
+        # Condition 6: Filter out if earnings are within the
